@@ -1,0 +1,66 @@
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using UniOne.Client;
+
+namespace UniOne.Api.Project.Model;
+
+/// <summary>
+/// Object with project properties.
+/// </summary>
+public class ProjectObject
+{
+    /// <summary>
+    /// Project name, unique for user account.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// ISO-3166 alpha-2 country code. If set, UniOne treats project personal data according to country<br/>
+    /// laws, e.g. GDPR for european countries.
+    /// </summary>
+    [JsonPropertyName("country")]
+    public string? Country { get; set; }
+
+    /// <summary>
+    /// Whether email sending is enabled for this project or not.<br/>
+    /// Default: `True`.
+    /// </summary>
+    [JsonPropertyName("send_enabled")]
+    public bool? SendEnabled { get; set; }
+
+    /// <summary>
+    /// If it's false then UniOne adds default unsubscribe footer to each email sent with API key of the<br/>
+    /// project. If it's true then appending default unsubscribe footer for this project is avoided and<br/>
+    /// sending with custom unsubscribe url or even without unsubscribe url is permitted for the project.<br/>
+    /// Please note that custom_unsubscribe_url_enabled=true is available only if removing unsubscribe link<br/>
+    /// is approved for the user account by support. More on this<br/>
+    /// [here](https://docs.unione.io/en/unsubscribe-link). When custom_unsubscribe_url_enabled is skipped<br/>
+    /// on creating a project, it's value is taken from user
+    /// </summary>
+    [JsonPropertyName("custom_unsubscribe_url_enabled")]
+    public bool? CustomUnsubscribeUrlEnabled { get; set; }
+
+    /// <summary>
+    /// A unique domain identifier which will determine the [tracking<br/>
+    /// domain](https://docs.unione.io/en/tracking-domains) or [dedicated IP](/dedicated-ip) pool to be used<br/>
+    /// by default. If the value is not specified, a default backend domain will be assigned for your<br/>
+    /// account or project instead.
+    /// </summary>
+    [JsonPropertyName("backend_domain_id")]
+    public int? BackendDomainId { get; set; }
+
+    /// <summary>
+    /// A unique identifier that defines the default unsubscribe page. If absent, the account/project will<br/>
+    /// be assigned the system default unsubscribe page.
+    /// </summary>
+    [JsonPropertyName("unsubscribe_page_id")]
+    public int? UnsubscribePageId { get; set; }
+
+    /// <summary>The object as JSON.</summary>
+    public override string ToString()
+    {
+        return JsonSerializer.Serialize(this, GetType(), ApiClient.JsonOptions);
+    }
+}
