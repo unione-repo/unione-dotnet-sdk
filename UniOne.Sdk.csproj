@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <PackageId>UniOne</PackageId>
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <Authors>UniOne</Authors>
     <Description>UniOne Web API client library for .NET</Description>
     <PackageTags>unione;email;api;sdk</PackageTags>
