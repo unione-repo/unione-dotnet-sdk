@@ -14,7 +14,7 @@ namespace UniOne.Client;
 public class ApiClient
 {
     /// <summary>The SDK and its version in the "platform" query parameter of every request.</summary>
-    public const string Platform = "dotnet-sdk.2.1.2";
+    public const string Platform = "dotnet-sdk.2.1.3";
 
     /// <summary>JSON options of the requests and responses: null fields are omitted.</summary>
     public static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions(false);
