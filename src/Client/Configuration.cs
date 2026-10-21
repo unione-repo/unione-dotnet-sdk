@@ -45,7 +45,7 @@ public class Configuration
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>User-Agent header value.</summary>
-    public string UserAgent { get; set; } = "unione-dotnet-sdk/2.2.3";
+    public string UserAgent { get; set; } = "unione-dotnet-sdk/2.2.4";
 
     /// <summary>Package that uses the SDK and its version, e.g. "aspnetcore.1.0.0": goes to the "platform" query parameter
     /// before the SDK one (ApiClient.Platform).</summary>
