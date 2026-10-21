@@ -29,6 +29,21 @@ public class BodyObject
     [JsonPropertyName("amp")]
     public string? Amp { get; set; }
 
+    /// <summary>An HTML body, with an optional plain-text part.</summary>
+    /// <param name="html">The HTML part.</param>
+    /// <param name="plaintext">The plain-text part.</param>
+    public static BodyObject FromHtml(string html, string? plaintext = null)
+    {
+        return new BodyObject { Html = html, Plaintext = plaintext };
+    }
+
+    /// <summary>A plain-text body.</summary>
+    /// <param name="plaintext">The text.</param>
+    public static BodyObject FromText(string plaintext)
+    {
+        return new BodyObject { Plaintext = plaintext };
+    }
+
     /// <summary>The object as JSON.</summary>
     public override string ToString()
     {
