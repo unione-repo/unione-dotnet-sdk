@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using UniOne.Client;
 
 namespace UniOne.Api.Email.Model;
@@ -46,6 +47,48 @@ public class MessageObjectRecipientsItem
     /// </summary>
     [JsonPropertyName("metadata")]
     public Dictionary<string, string>? Metadata { get; set; }
+
+    private static readonly Regex AddressPattern = new Regex("^(.*)<([^>]+)>$", RegexOptions.Singleline);
+
+    /// <summary>
+    /// A recipient from "email" or "Name &lt;email&gt;": the name goes to the to_name substitution (the name in the
+    /// "To" header).
+    /// </summary>
+    /// <param name="address">"email" or "Name &lt;email&gt;".</param>
+    /// <param name="substitutions">More substitutions of the recipient.</param>
+    public static MessageObjectRecipientsItem FromAddress(string address, IDictionary<string, string>? substitutions = null)
+    {
+        var email = address.Trim();
+        var name = "";
+        var match = AddressPattern.Match(email);
+        if (match.Success)
+        {
+            email = match.Groups[2].Value.Trim();
+            name = match.Groups[1].Value.Trim().Trim('"');
+        }
+        var all = substitutions == null ? null : new Dictionary<string, string>(substitutions);
+        if (name.Length > 0)
+        {
+            all = new Dictionary<string, string> { ["to_name"] = name };
+            if (substitutions != null)
+            {
+                foreach (var entry in substitutions)
+                {
+                    all[entry.Key] = entry.Value;  // an explicit to_name wins
+                }
+            }
+        }
+        return new MessageObjectRecipientsItem { Email = email, Substitutions = all };
+    }
+
+    /// <summary>Sets the metadata of the recipient (returned in its webhook events).</summary>
+    /// <param name="metadata">The metadata.</param>
+    /// <returns>This recipient.</returns>
+    public MessageObjectRecipientsItem WithMetadata(IDictionary<string, string> metadata)
+    {
+        Metadata = new Dictionary<string, string>(metadata);
+        return this;
+    }
 
     /// <summary>The object as JSON.</summary>
     public override string ToString()
