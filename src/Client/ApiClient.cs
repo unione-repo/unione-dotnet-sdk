@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -14,7 +15,7 @@ namespace UniOne.Client;
 public class ApiClient
 {
     /// <summary>The SDK and its version in the "platform" query parameter of every request.</summary>
-    public const string Platform = "dotnet-sdk.1.2.4";
+    public const string Platform = "dotnet-sdk.1.3.0";
 
     /// <summary>JSON options of the requests and responses: null fields are omitted.</summary>
     public static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions(false);
@@ -51,9 +52,17 @@ public class ApiClient
     }
 
     /// <summary>Calls an API method, e.g. "/email/send.json", and decodes the response.</summary>
-    /// <exception cref="ApiException">The API returned an error.</exception>
+    /// <exception cref="ApiException">The API returned an error, the request failed or is invalid (an empty API key, a
+    /// required field missing: <see cref="ApiException.Kind"/>), or the response can not be processed.</exception>
     public async Task<T> CallAsync<T>(string path, object? body, CancellationToken cancellationToken = default)
     {
+        var method = ErrorInfo.MethodOf(path);
+        if (string.IsNullOrEmpty(_config.ApiKey))
+        {
+            throw Error(method, "the API key is empty: pass the API key of the user or of the project to the client", 0, null,
+                null, ApiErrorKind.InvalidRequest);
+        }
+
         string json;
         try
         {
@@ -61,7 +70,13 @@ public class ApiClient
         }
         catch (JsonException e)
         {
-            throw new ApiException("Can not encode the request: " + e.Message, 0, null, null, e);
+            throw Error(method, "can not encode the request: " + e.Message, 0, null, e, ApiErrorKind.InvalidRequest);
+        }
+
+        var missing = ErrorInfo.Missing(method, json);
+        if (missing != null)
+        {
+            throw Error(method, missing + " is required", 0, null, null, ApiErrorKind.InvalidRequest);
         }
 
         var url = _config.BaseUrl.TrimEnd('/') + "/" + path.TrimStart('/') + "?platform=" + Uri.EscapeDataString(string.IsNullOrEmpty(_config.Platform) ? Platform : _config.Platform + "," + Platform);
@@ -88,11 +103,11 @@ public class ApiClient
         }
         catch (HttpRequestException e)
         {
-            throw new ApiException("HTTP request failed: " + e.Message, 0, null, null, e);
+            throw Error(method, "HTTP request failed: " + e.Message, 0, null, e, ApiErrorKind.Network);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new ApiException("HTTP request timed out", 0, null, null, e);
+            throw Error(method, TimedOut(), 0, null, e, ApiErrorKind.Timeout);
         }
 
         using (response)
@@ -104,11 +119,11 @@ public class ApiClient
             }
             catch (HttpRequestException e)
             {
-                throw new ApiException("Can not read the response: " + e.Message, status, null, null, e);
+                throw Error(method, "can not read the response: " + e.Message, status, null, e, ApiErrorKind.Network);
             }
             catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new ApiException("HTTP request timed out", status, null, null, e);
+                throw Error(method, TimedOut(), status, null, e, ApiErrorKind.Timeout);
             }
 
             JsonDocument document;
@@ -118,7 +133,8 @@ public class ApiClient
             }
             catch (JsonException e)
             {
-                throw new ApiException($"Invalid JSON in response (HTTP {status})", status, null, raw, e);
+                throw Error(method, $"invalid JSON in response (HTTP {status}): {Excerpt(raw)}", status, raw, e,
+                    ApiErrorKind.InvalidResponse);
             }
 
             using (document)
@@ -126,7 +142,8 @@ public class ApiClient
                 var root = document.RootElement;
                 if (root.ValueKind != JsonValueKind.Object)
                 {
-                    throw new ApiException($"Unexpected response (HTTP {status})", status, null, raw);
+                    throw Error(method, $"unexpected response (HTTP {status}): {Excerpt(raw)}", status, raw, null,
+                        ApiErrorKind.InvalidResponse);
                 }
 
                 var isError = root.TryGetProperty("status", out var statusField)
@@ -134,28 +151,55 @@ public class ApiClient
                     && statusField.GetString() == "error";
                 if (status >= 400 || isError)
                 {
-                    var message = root.TryGetProperty("message", out var messageField)
-                        && messageField.ValueKind == JsonValueKind.String
-                            ? messageField.GetString() ?? "API error"
-                            : "API error";
-                    int? code = root.TryGetProperty("code", out var codeField)
-                        && codeField.ValueKind == JsonValueKind.Number
-                        && codeField.TryGetInt32(out var parsed)
-                            ? parsed
-                            : null;
-                    throw new ApiException(message, status, code, raw);
+                    string? message = null;
+                    if (root.TryGetProperty("message", out var messageField) && messageField.ValueKind != JsonValueKind.Null)
+                    {
+                        message = messageField.ValueKind == JsonValueKind.String
+                            ? messageField.GetString()
+                            : messageField.GetRawText();
+                    }
+
+                    int? code = root.TryGetProperty("code", out var codeField) ? ErrorInfo.Code(codeField) : null;
+                    throw new ApiException(ErrorInfo.ApiMessage(method, ErrorInfo.Quote(message), status, code), status, code,
+                        raw, null, method, ErrorInfo.Hint(code), ApiErrorKind.Api, message);
                 }
             }
 
             try
             {
                 return JsonSerializer.Deserialize<T>(raw, JsonOptions)
-                    ?? throw new ApiException("Empty response", status, null, raw);
+                    ?? throw Error(method, $"empty response (HTTP {status})", status, raw, null, ApiErrorKind.InvalidResponse);
             }
             catch (JsonException e)
             {
-                throw new ApiException("Can not decode the response: " + e.Message, status, null, raw, e);
+                throw Error(method, "can not decode the response: " + e.Message, status, raw, e, ApiErrorKind.InvalidResponse);
             }
         }
+    }
+
+    /// <summary>The message of a timeout: the shorter of Configuration.Timeout and HttpClient.Timeout (a custom
+    /// HttpClient may have its own one) fired first.</summary>
+    private string TimedOut()
+    {
+        var timeout = _config.Timeout;
+        if (_http.Timeout > TimeSpan.Zero && (timeout <= TimeSpan.Zero || _http.Timeout < timeout))
+        {
+            timeout = _http.Timeout;
+        }
+
+        return timeout > TimeSpan.Zero
+            ? "HTTP request timed out after " + timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
+            : "HTTP request timed out";
+    }
+
+    private static string Excerpt(string raw)
+    {
+        return ErrorInfo.Quote(raw);
+    }
+
+    private static ApiException Error(string method, string message, int status, string? raw, Exception? inner,
+        ApiErrorKind kind)
+    {
+        return new ApiException(method + ": " + message, status, null, raw, inner, method, null, kind);
     }
 }

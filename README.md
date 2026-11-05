@@ -11,10 +11,10 @@ Official .NET (C#) library for the [UniOne](https://unione.io) transactional ema
 ## Install
 
 ```bash
-dotnet add package UniOne
+dotnet add package UniOne --version 1.*
 ```
 
-Requirements: .NET Standard 2.0 (.NET Framework 4.6.1+, .NET Core 2.0+). No third-party dependencies.
+Requirements: .NET Standard 2.0 (.NET Framework 4.6.2+, .NET 6+). Dependencies: System.Text.Json (NuGet).
 
 This is the 1.x line (branch `1.x`) for .NET Standard 2.0. Newer runtimes: the 2.x line (branch `main`), the same API.
 
@@ -158,7 +158,7 @@ await client.Email.SendAsync(new EmailSendRequest
 
 ### Retry safely
 
-A repeat with the same `idempotence_key` within a minute is not sent twice: retry network errors, timeouts, 429 and 5xx with it.
+A repeat with the same `idempotence_key` within a minute is not sent twice: retry the retryable errors (network errors, timeouts, 429 and 5xx) with it; after that minute check your own record of the sent email before repeating.
 
 ```csharp
 await client.Email.SendAsync(new EmailSendRequest
@@ -187,8 +187,9 @@ try
 }
 catch (ApiException e)
 {
-    // HTTP status (0: network error or timeout), API error code, message
-    Console.Error.WriteLine($"{e.HttpStatus} {e.ErrorCode} {e.Message}");
+    // the message: method, API error code, HTTP status and how to fix it; kind: what failed; retryable: a repeat may succeed
+    Console.Error.WriteLine(e.Message);
+    Console.Error.WriteLine($"{e.Kind} {(e.IsRetryable ? "retryable" : "not retryable")}");
 }
 ```
 
@@ -384,7 +385,7 @@ var headers = new HeadersObject
 
 ### Error handling
 
-Every method raises `ApiException` when the API returns an error; it carries the [API error code](https://docs.unione.io/en/web-api-ref#api-errors) and the HTTP status.
+Every method raises `ApiException`: an error of the API, a network error or a timeout, a broken response, and a mistake found before sending (an empty API key, a missing or empty `message.recipients` or `email` of a recipient: no request is sent). The message names the method and, for an API error, the [API error code](https://docs.unione.io/en/web-api-ref#api-errors), the HTTP status and how to fix it: `email/send: Unknown recipient (API error 204, HTTP 400). Fix: ...`. The error also tells what failed (its kind: api, network, timeout, invalid_response, invalid_request), whether a repeat may succeed (network, timeout, HTTP 429 and 5xx; not a request you cancelled) and keeps the API's own message text, in full and undecorated, in `ApiMessage` (empty without an API response).
 
 ## Help
 
